@@ -103,6 +103,72 @@ class ScrapingService {
     }
   }
 
+  async searchCashConverters(searchTerm, location = 'UK') {
+  try {
+    logger.info(`💰 Searching CashConverters for: "${searchTerm}" in ${location}`);
+
+    if (!this.scrapingBeeApiKey || this.scrapingBeeApiKey.trim() === '') {
+      logger.warn('⚠️ ScrapingBee not configured, returning mock data for testing');
+      return this.getMockCashConvertersResults(searchTerm);
+    }
+
+    // CashConverters UK search URL
+    const url = `https://www.cashconverters.co.uk/search?query=${encodeURIComponent(searchTerm)}`;
+
+    const response = await axios.get(this.scrapingBeeBaseUrl, {
+      params: {
+        api_key: this.scrapingBeeApiKey,
+        url,
+        render_js: 'true',
+        premium_proxy: 'true',
+        country_code: 'gb'
+      },
+      timeout: 45000
+    });
+
+    const $ = cheerio.load(response.data);
+    const listings = [];
+
+    // Selector based on CashConverters product listings (update if site changes)
+    $('.product-card').each((index, element) => {
+      if (index >= 15) return false; // Limit to 15 results
+
+      const $item = $(element);
+      const title = $item.find('.product-card-title').text().trim();
+      const price = $item.find('.product-card-price').text().trim();
+      const linkPartial = $item.find('a.product-card-link').attr('href');
+      const link = linkPartial ? `https://www.cashconverters.co.uk${linkPartial}` : null;
+      let image = $item.find('img.product-card-image').attr('src') || '';
+
+      // Improve image URL if possible (some logic can be added here if needed)
+
+      if (title && price && link) {
+        listings.push({
+          title: this.cleanTitle(title),
+          price: this.cleanPrice(price),
+          link,
+          image,
+          source: 'cashconverters',
+          description: title
+        });
+      }
+    });
+
+    logger.info(`✅ Found ${listings.length} CashConverters listings`);
+    return listings;
+
+  } catch (error) {
+    logger.error(`❌ CashConverters search error for "${searchTerm}":`, {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      code: error.code,
+      url: error.config?.url
+    });
+    return [];
+  }
+}
+
   // Placeholder: Add your existing searchGumtree method here
   async searchGumtree(searchTerm, location = '') {
     // existing code unchanged
