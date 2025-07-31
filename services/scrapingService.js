@@ -126,5 +126,3 @@ class ScrapingService {
 }
 
 export const scrapingService = new ScrapingService();
-
-}
