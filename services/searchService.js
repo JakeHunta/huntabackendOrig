@@ -43,6 +43,12 @@ class SearchService {
             return [];
           })
         );
+        searchPromises.push(
+          scrapingService.searchCashConverters(term, location).catch(err => {
+            logger.warn(`⚠️ CashConverters search failed for "${term}":`, err.message);
+            return [];
+          })
+        );
       }
 
       // Await all searches
@@ -176,6 +182,9 @@ class SearchService {
     });
   }
 }
+
+export const searchService = new SearchService();
+
 
 export const searchService = new SearchService();
 
