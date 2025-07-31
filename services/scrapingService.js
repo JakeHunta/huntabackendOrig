@@ -4,7 +4,7 @@ import { logger } from '../utils/logger.js';
 
 class ScrapingService {
   constructor() {
-    this.scrapingBeeBaseUrl = 'https://app.scrapingbee.com/api/v1/';
+    this.scrapingBeeBaseUrl = ''https://app.scrapingbee.com/api/v1/scrape';
   }
 
   get scrapingBeeApiKey() {
