@@ -166,4 +166,3 @@ Focus on terms that sellers actually use in listings, including:
 
 export const openaiService = new OpenAIService();
 
-export const openaiService = new OpenAIService();
