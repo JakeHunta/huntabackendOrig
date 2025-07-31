@@ -103,7 +103,7 @@ class ScrapingService {
     }
   }
 
-  async searchCashConverters(searchTerm, location = 'UK') {
+ async searchCashConverters(searchTerm, location = 'UK') {
   try {
     logger.info(`💰 Searching CashConverters for: "${searchTerm}" in ${location}`);
 
@@ -112,16 +112,17 @@ class ScrapingService {
       return this.getMockCashConvertersResults(searchTerm);
     }
 
-    // CashConverters UK search URL
-    const url = `https://www.cashconverters.co.uk/search?query=${encodeURIComponent(searchTerm)}`;
+    // Construct CashConverters search URL (example)
+    const cashConvertersUrl = `https://www.cashconverters.co.uk/search?q=${encodeURIComponent(searchTerm)}`;
 
-    const response = await axios.get(this.scrapingBeeBaseUrl, {
+    const response = await axios.get('https://app.scrapingbee.com/api/v1/', {
       params: {
         api_key: this.scrapingBeeApiKey,
-        url,
-        render_js: 'true',
+        url: cashConvertersUrl,
+        render_js: 'true',       // maybe needed if page uses JS
         premium_proxy: 'true',
-        country_code: 'gb'
+        country_code: 'gb',
+        wait: 3000              // wait 3 seconds if needed for JS content
       },
       timeout: 45000
     });
@@ -129,25 +130,26 @@ class ScrapingService {
     const $ = cheerio.load(response.data);
     const listings = [];
 
-    // Selector based on CashConverters product listings (update if site changes)
+    // Parse listings — adapt selectors to CashConverters DOM structure
     $('.product-card').each((index, element) => {
-      if (index >= 15) return false; // Limit to 15 results
+      if (index >= 15) return false;
 
       const $item = $(element);
-      const title = $item.find('.product-card-title').text().trim();
-      const price = $item.find('.product-card-price').text().trim();
-      const linkPartial = $item.find('a.product-card-link').attr('href');
-      const link = linkPartial ? `https://www.cashconverters.co.uk${linkPartial}` : null;
-      let image = $item.find('img.product-card-image').attr('src') || '';
+      const title = $item.find('.product-card__title').text().trim();
+      const price = $item.find('.product-card__price').text().trim();
+      let link = $item.find('a.product-card__link').attr('href');
+      let image = $item.find('img.product-card__image').attr('src');
 
-      // Improve image URL if possible (some logic can be added here if needed)
+      if (link && link.startsWith('/')) {
+        link = `https://www.cashconverters.co.uk${link}`;
+      }
 
       if (title && price && link) {
         listings.push({
           title: this.cleanTitle(title),
           price: this.cleanPrice(price),
           link,
-          image,
+          image: image || '',
           source: 'cashconverters',
           description: title
         });
@@ -168,6 +170,7 @@ class ScrapingService {
     return [];
   }
 }
+
 
   // Placeholder: Add your existing searchGumtree method here
   async searchGumtree(searchTerm, location = '') {
