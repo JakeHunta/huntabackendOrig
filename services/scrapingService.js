@@ -11,10 +11,31 @@ class ScrapingService {
     return process.env.SCRAPINGBEE_API_KEY;
   }
 
-  improveEbayImageUrl(url) {
-    if (!url) return url;
-    // Replace thumbnail size suffix with a larger image suffix (e.g., _32.jpg or _64.jpg => _500.jpg)
-    return url.replace(/_(32|64)\.jpg$/, '_500.jpg');
+  improveEbayImageUrl(url, $item) {
+    if (!url && $item) {
+      // Try to get higher-res image from srcset or data-src attributes
+      const srcset = $item.find('.s-item__image img').attr('srcset');
+      if (srcset) {
+        const candidates = srcset.split(',').map(s => s.trim().split(' ')[0]);
+        const highRes = candidates.find(c => c.includes('_1280.jpg')) 
+                     || candidates.find(c => c.includes('_640.jpg')) 
+                     || candidates.find(c => c.includes('_500.jpg')) 
+                     || candidates.pop();
+        if (highRes) return highRes;
+      }
+      const dataSrc = $item.find('.s-item__image img').attr('data-src');
+      if (dataSrc) return dataSrc;
+      return url;
+    }
+
+    // Replace common low-res suffixes with higher-res suffixes
+    const replacements = ['_1280.jpg', '_640.jpg', '_500.jpg'];
+    for (const suffix of replacements) {
+      const candidate = url.replace(/_(32|64|96|140|180|225)\.jpg$/, suffix);
+      if (candidate) return candidate;
+    }
+
+    return url;
   }
 
   async searchEbay(searchTerm, location = 'UK') {
@@ -26,7 +47,7 @@ class ScrapingService {
         return this.getMockEbayResults(searchTerm);
       }
 
-      // UK eBay domain with location filter LH_PrefLoc=3 (UK only)
+      // UK eBay with location filter LH_PrefLoc=3 (UK only)
       const ebayUrl = `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(searchTerm)}&_sop=12&_fsrp=1&LH_PrefLoc=3`;
 
       const response = await axios.get(this.scrapingBeeBaseUrl, {
@@ -44,7 +65,7 @@ class ScrapingService {
       const listings = [];
 
       $('.s-item').each((index, element) => {
-        if (index >= 15) return false; // Limit to 15 results per search
+        if (index >= 15) return false;
 
         const $item = $(element);
 
@@ -53,8 +74,7 @@ class ScrapingService {
         const link = $item.find('.s-item__link').attr('href');
         let image = $item.find('.s-item__image img').attr('src');
 
-        // Improve image resolution if possible
-        image = this.improveEbayImageUrl(image);
+        image = this.improveEbayImageUrl(image, $item);
 
         if (title && price && link && !title.toLowerCase().includes('shop on ebay')) {
           listings.push({
@@ -128,4 +148,3 @@ class ScrapingService {
 }
 
 export const scrapingService = new ScrapingService();
-
