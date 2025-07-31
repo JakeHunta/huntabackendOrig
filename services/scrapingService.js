@@ -26,7 +26,7 @@ class ScrapingService {
         return this.getMockEbayResults(searchTerm);
       }
 
-      // Use UK eBay domain with location filter param LH_PrefLoc=3 (UK only)
+      // UK eBay with location filter LH_PrefLoc=3 (UK only)
       const ebayUrl = `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(searchTerm)}&_sop=12&_fsrp=1&LH_PrefLoc=3`;
 
       const response = await axios.get(this.scrapingBeeBaseUrl, {
@@ -44,7 +44,7 @@ class ScrapingService {
       const listings = [];
 
       $('.s-item').each((index, element) => {
-        if (index >= 15) return false; // Limit to 15 results per search
+        if (index >= 15) return false;
 
         const $item = $(element);
 
@@ -53,7 +53,6 @@ class ScrapingService {
         const link = $item.find('.s-item__link').attr('href');
         let image = $item.find('.s-item__image img').attr('src');
 
-        // Improve image resolution if possible
         image = this.improveEbayImageUrl(image);
 
         if (title && price && link && !title.toLowerCase().includes('shop on ebay')) {
@@ -83,7 +82,7 @@ class ScrapingService {
     }
   }
 
-  // ... keep your existing searchGumtree, searchFacebookMarketplace, cleanTitle, cleanPrice, mocks, etc. unchanged ...
+  // Keep your existing methods unchanged below
 
   async searchGumtree(searchTerm, location = '') {
     // existing code unchanged
@@ -127,3 +126,5 @@ class ScrapingService {
 }
 
 export const scrapingService = new ScrapingService();
+
+}
