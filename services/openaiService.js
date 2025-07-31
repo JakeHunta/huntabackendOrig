@@ -50,31 +50,35 @@ Focus on terms that sellers actually use in listings, including:
 - Condition descriptors (used, pre-owned, second hand)
 - Popular misspellings`;
 
-      const response = await axios.post(`${this.baseURL}/chat/completions`, {
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: `Enhance this search query for second-hand marketplace search: "${searchTerm}"`
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 800,
-        timeout: 30000
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
+      const response = await axios.post(
+        `${this.baseURL}/chat/completions`,
+        {
+          model: 'gpt-4',
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
+              role: 'user',
+              content: `Enhance this search query for second-hand marketplace search: "${searchTerm}"`
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 800
+          // NOTE: Removed invalid timeout here
         },
-        timeout: 30000
-      });
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000  // Axios-level timeout here instead
+        }
+      );
 
       const content = response.data.choices[0].message.content.trim();
-      
+
       // Clean and parse JSON response
       let cleanContent = content;
       if (cleanContent.startsWith('```json')) {
@@ -84,14 +88,14 @@ Focus on terms that sellers actually use in listings, including:
       }
 
       const enhancement = JSON.parse(cleanContent);
-      
+
       // Validate the response structure
       if (!enhancement.search_terms || !Array.isArray(enhancement.search_terms)) {
         throw new Error('Invalid OpenAI response: missing search_terms array');
       }
 
       logger.info(`✅ Query enhanced: ${enhancement.search_terms.length} terms generated`);
-      
+
       return {
         original: searchTerm,
         search_terms: enhancement.search_terms.slice(0, 8), // Limit to 8 terms
@@ -112,7 +116,7 @@ Focus on terms that sellers actually use in listings, including:
         statusText: error.response?.statusText,
         data: error.response?.data
       });
-      
+
       // Return fallback enhancement on error
       return this.getFallbackEnhancement(searchTerm);
     }
@@ -120,7 +124,7 @@ Focus on terms that sellers actually use in listings, including:
 
   getFallbackEnhancement(searchTerm) {
     logger.info('🔄 Using intelligent fallback query enhancement');
-    
+
     const terms = [
       searchTerm,
       `used ${searchTerm}`,
@@ -131,16 +135,16 @@ Focus on terms that sellers actually use in listings, including:
 
     // Add some basic intelligence to fallback
     const lowerTerm = searchTerm.toLowerCase();
-    
+
     // Add brand-specific terms
     if (lowerTerm.includes('iphone') || lowerTerm.includes('apple')) {
       terms.push(`${searchTerm} unlocked`, `${searchTerm} refurbished`);
     }
-    
+
     if (lowerTerm.includes('guitar') || lowerTerm.includes('bass')) {
       terms.push(`${searchTerm} electric`, `${searchTerm} acoustic`);
     }
-    
+
     if (lowerTerm.includes('car') || lowerTerm.includes('vehicle')) {
       terms.push(`${searchTerm} auto`, `${searchTerm} motor`);
     }
@@ -159,5 +163,7 @@ Focus on terms that sellers actually use in listings, including:
     };
   }
 }
+
+export const openaiService = new OpenAIService();
 
 export const openaiService = new OpenAIService();
