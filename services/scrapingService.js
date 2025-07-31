@@ -13,7 +13,7 @@ class ScrapingService {
 
   improveEbayImageUrl(url) {
     if (!url) return url;
-    // Replace thumbnail size suffix with a larger image suffix
+    // Replace thumbnail size suffix with a larger image suffix (e.g., _32.jpg or _64.jpg => _500.jpg)
     return url.replace(/_(32|64)\.jpg$/, '_500.jpg');
   }
 
@@ -26,7 +26,7 @@ class ScrapingService {
         return this.getMockEbayResults(searchTerm);
       }
 
-      // UK eBay with location filter LH_PrefLoc=3 (UK only)
+      // UK eBay domain with location filter LH_PrefLoc=3 (UK only)
       const ebayUrl = `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(searchTerm)}&_sop=12&_fsrp=1&LH_PrefLoc=3`;
 
       const response = await axios.get(this.scrapingBeeBaseUrl, {
@@ -44,7 +44,7 @@ class ScrapingService {
       const listings = [];
 
       $('.s-item').each((index, element) => {
-        if (index >= 15) return false;
+        if (index >= 15) return false; // Limit to 15 results per search
 
         const $item = $(element);
 
@@ -53,13 +53,14 @@ class ScrapingService {
         const link = $item.find('.s-item__link').attr('href');
         let image = $item.find('.s-item__image img').attr('src');
 
+        // Improve image resolution if possible
         image = this.improveEbayImageUrl(image);
 
         if (title && price && link && !title.toLowerCase().includes('shop on ebay')) {
           listings.push({
             title: this.cleanTitle(title),
             price: this.cleanPrice(price),
-            link: link,
+            link,
             image: image || '',
             source: 'ebay',
             description: title
@@ -82,12 +83,12 @@ class ScrapingService {
     }
   }
 
-  // Keep your existing methods unchanged below
-
+  // Placeholder: Add your existing searchGumtree method here
   async searchGumtree(searchTerm, location = '') {
     // existing code unchanged
   }
 
+  // Placeholder: Add your existing searchFacebookMarketplace method here
   async searchFacebookMarketplace(searchTerm, location = '') {
     // existing code unchanged
   }
@@ -112,6 +113,7 @@ class ScrapingService {
     return price.trim().substring(0, 20);
   }
 
+  // Placeholder: Add your existing mock data methods here
   getMockGumtreeResults(searchTerm) {
     // existing code unchanged
   }
@@ -126,3 +128,4 @@ class ScrapingService {
 }
 
 export const scrapingService = new ScrapingService();
+
