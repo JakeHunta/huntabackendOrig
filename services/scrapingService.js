@@ -13,7 +13,6 @@ class ScrapingService {
 
   improveEbayImageUrl(url, $item) {
     if (!url && $item) {
-      // Try to get higher-res image from srcset or data-src attributes
       const srcset = $item.find('.s-item__image img').attr('srcset');
       if (srcset) {
         const candidates = srcset.split(',').map(s => s.trim().split(' ')[0]);
@@ -28,7 +27,6 @@ class ScrapingService {
       return url;
     }
 
-    // Replace common low-res suffixes with higher-res suffixes
     const replacements = ['_1280.jpg', '_640.jpg', '_500.jpg'];
     for (const suffix of replacements) {
       const candidate = url.replace(/_(32|64|96|140|180|225)\.jpg$/, suffix);
@@ -47,17 +45,20 @@ class ScrapingService {
         return this.getMockEbayResults(searchTerm);
       }
 
-      // UK eBay with location filter LH_PrefLoc=3 (UK only)
       const ebayUrl = `https://www.ebay.co.uk/sch/i.html?_nkw=${encodeURIComponent(searchTerm)}&_sop=12&_fsrp=1&LH_PrefLoc=3`;
 
+      const params = {
+        api_key: this.scrapingBeeApiKey,
+        url: ebayUrl,
+        render_js: 'false',
+        premium_proxy: 'true',
+        country_code: 'gb'
+      };
+
+      logger.info('ScrapingBee request params for eBay:', params);
+
       const response = await axios.get(this.scrapingBeeBaseUrl, {
-        params: {
-          api_key: this.scrapingBeeApiKey,
-          url: ebayUrl,
-          render_js: 'false',
-          premium_proxy: 'true',
-          country_code: 'gb'
-        },
+        params,
         timeout: 45000
       });
 
@@ -103,83 +104,157 @@ class ScrapingService {
     }
   }
 
- async searchCashConverters(searchTerm, location = 'UK') {
-  try {
-    logger.info(`💰 Searching CashConverters for: "${searchTerm}" in ${location}`);
+  async searchGumtree(searchTerm, location = '') {
+    try {
+      logger.info(`🌳 Searching Gumtree for: "${searchTerm}" in ${location}`);
 
-    if (!this.scrapingBeeApiKey || this.scrapingBeeApiKey.trim() === '') {
-      logger.warn('⚠️ ScrapingBee not configured, returning mock data for testing');
-      return this.getMockCashConvertersResults(searchTerm);
-    }
+      if (!this.scrapingBeeApiKey || this.scrapingBeeApiKey.trim() === '') {
+        logger.warn('⚠️ ScrapingBee not configured, returning mock data for testing');
+        return this.getMockGumtreeResults(searchTerm);
+      }
 
-    // Construct CashConverters search URL (example)
-    const cashConvertersUrl = `https://www.cashconverters.co.uk/search?q=${encodeURIComponent(searchTerm)}`;
+      let gumtreeUrl = `https://www.gumtree.com/search?search_category=all&q=${encodeURIComponent(searchTerm)}`;
 
-    const response = await axios.get('https://app.scrapingbee.com/api/v1/', {
-      params: {
+      if (location && location !== 'UK') {
+        gumtreeUrl += `&search_location=${encodeURIComponent(location)}`;
+      }
+
+      const params = {
         api_key: this.scrapingBeeApiKey,
-        url: cashConvertersUrl,
-        render_js: 'true',       // maybe needed if page uses JS
+        url: gumtreeUrl,
+        render_js: 'true',
+        premium_proxy: 'true',
+        country_code: 'gb'
+      };
+
+      logger.info('ScrapingBee request params for Gumtree:', params);
+
+      const response = await axios.get(this.scrapingBeeBaseUrl, {
+        params,
+        timeout: 45000
+      });
+
+      const $ = cheerio.load(response.data);
+      const listings = [];
+
+      $('.listing-link, .listing-item, [data-q="listing"]').each((index, element) => {
+        if (index >= 15) return false;
+
+        const $item = $(element);
+
+        let title = $item.find('.listing-title, .listing-item-title, h2, h3').first().text().trim();
+        let price = $item.find('.listing-price, .price, .ad-price').first().text().trim();
+        let link = $item.find('a').first().attr('href');
+        let image = $item.find('img').first().attr('src') || $item.find('img').first().attr('data-src');
+
+        if (!title) title = $item.find('[data-q="listing-title"], .tileTitle').text().trim();
+        if (!price) price = $item.find('[data-q="price"], .tilePrice').text().trim();
+        if (!link) link = $item.attr('href') || $item.find('a[href*="/p/"]').attr('href');
+
+        if (title && price && link) {
+          if (link.startsWith('/')) {
+            link = `https://www.gumtree.com${link}`;
+          }
+
+          listings.push({
+            title: this.cleanTitle(title),
+            price: this.cleanPrice(price),
+            link,
+            image: image || '',
+            source: 'gumtree',
+            description: title
+          });
+        }
+      });
+
+      logger.info(`✅ Found ${listings.length} Gumtree listings`);
+      return listings;
+
+    } catch (error) {
+      logger.error(`❌ Gumtree search error for "${searchTerm}":`, {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        code: error.code,
+        url: error.config?.url
+      });
+      return [];
+    }
+  }
+
+  async searchFacebookMarketplace(searchTerm, location = '') {
+    try {
+      logger.info(`📘 Searching Facebook Marketplace for: "${searchTerm}" in ${location}`);
+
+      if (!this.scrapingBeeApiKey || this.scrapingBeeApiKey.trim() === '') {
+        logger.warn('⚠️ ScrapingBee not configured, returning mock data for testing');
+        return this.getMockFacebookResults(searchTerm);
+      }
+
+      let facebookUrl = `https://www.facebook.com/marketplace/search/?query=${encodeURIComponent(searchTerm)}`;
+
+      if (location && location !== 'UK') {
+        facebookUrl += `&exact=false`;
+      }
+
+      const params = {
+        api_key: this.scrapingBeeApiKey,
+        url: facebookUrl,
+        render_js: 'true',
         premium_proxy: 'true',
         country_code: 'gb',
-        wait: 3000              // wait 3 seconds if needed for JS content
-      },
-      timeout: 45000
-    });
+        wait: 3000
+      };
 
-    const $ = cheerio.load(response.data);
-    const listings = [];
+      logger.info('ScrapingBee request params for Facebook Marketplace:', params);
 
-    // Parse listings — adapt selectors to CashConverters DOM structure
-    $('.product-card').each((index, element) => {
-      if (index >= 15) return false;
+      const response = await axios.get(this.scrapingBeeBaseUrl, {
+        params,
+        timeout: 60000
+      });
 
-      const $item = $(element);
-      const title = $item.find('.product-card__title').text().trim();
-      const price = $item.find('.product-card__price').text().trim();
-      let link = $item.find('a.product-card__link').attr('href');
-      let image = $item.find('img.product-card__image').attr('src');
+      const $ = cheerio.load(response.data);
+      const listings = [];
 
-      if (link && link.startsWith('/')) {
-        link = `https://www.cashconverters.co.uk${link}`;
-      }
+      $('[data-testid="marketplace-item"], .marketplace-item, .feed-story-item').each((index, element) => {
+        if (index >= 15) return false;
 
-      if (title && price && link) {
-        listings.push({
-          title: this.cleanTitle(title),
-          price: this.cleanPrice(price),
-          link,
-          image: image || '',
-          source: 'cashconverters',
-          description: title
-        });
-      }
-    });
+        const $item = $(element);
 
-    logger.info(`✅ Found ${listings.length} CashConverters listings`);
-    return listings;
+        let title = $item.find('span[dir="auto"]').first().text().trim();
+        let price = $item.find('span').filter((i, el) => $(el).text().match(/[£$€]\d+/)).first().text().trim();
+        let link = $item.find('a').first().attr('href');
+        let image = $item.find('img').first().attr('src');
 
-  } catch (error) {
-    logger.error(`❌ CashConverters search error for "${searchTerm}":`, {
-      message: error.message,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      code: error.code,
-      url: error.config?.url
-    });
-    return [];
-  }
-}
+        if (title && price && link) {
+          if (link.startsWith('/')) {
+            link = `https://www.facebook.com${link}`;
+          }
 
+          listings.push({
+            title: this.cleanTitle(title),
+            price: this.cleanPrice(price),
+            link,
+            image: image || '',
+            source: 'facebook',
+            description: title
+          });
+        }
+      });
 
-  // Placeholder: Add your existing searchGumtree method here
-  async searchGumtree(searchTerm, location = '') {
-    // existing code unchanged
-  }
+      logger.info(`✅ Found ${listings.length} Facebook Marketplace listings`);
+      return listings;
 
-  // Placeholder: Add your existing searchFacebookMarketplace method here
-  async searchFacebookMarketplace(searchTerm, location = '') {
-    // existing code unchanged
+    } catch (error) {
+      logger.error(`❌ Facebook Marketplace search error for "${searchTerm}":`, {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        code: error.code,
+        url: error.config?.url
+      });
+      return [];
+    }
   }
 
   cleanTitle(title) {
@@ -202,17 +277,51 @@ class ScrapingService {
     return price.trim().substring(0, 20);
   }
 
-  // Placeholder: Add your existing mock data methods here
   getMockGumtreeResults(searchTerm) {
-    // existing code unchanged
+    return [
+      {
+        title: `${searchTerm} - Excellent Condition`,
+        price: '£150',
+        link: 'https://www.gumtree.com/p/mock-listing-1',
+        image: 'https://images.pexels.com/photos/1751731/pexels-photo-1751731.jpeg?auto=compress&cs=tinysrgb&w=400',
+        source: 'gumtree',
+        description: `Used ${searchTerm} in excellent condition`
+      },
+      {
+        title: `${searchTerm} - Good Deal`,
+        price: '£120',
+        link: 'https://www.gumtree.com/p/mock-listing-2',
+        image: 'https://images.pexels.com/photos/1751731/pexels-photo-1751731.jpeg?auto=compress&cs=tinysrgb&w=400',
+        source: 'gumtree',
+        description: `Second-hand ${searchTerm} at great price`
+      }
+    ];
   }
 
   getMockEbayResults(searchTerm) {
-    // existing code unchanged
+    return [
+      {
+        title: `${searchTerm} - eBay Special`,
+        price: '£180',
+        link: 'https://www.ebay.com/itm/mock-listing-1',
+        image: 'https://images.pexels.com/photos/1751731/pexels-photo-1751731.jpeg?auto=compress&cs=tinysrgb&w=400',
+        source: 'ebay',
+        description: `Pre-owned ${searchTerm} from eBay`
+      }
+    ];
   }
 
   getMockFacebookResults(searchTerm) {
-    // existing code unchanged
+    return [
+      {
+        title: `${searchTerm} - Facebook Find`,
+        price: '£100',
+        link: 'https://www.facebook.com/marketplace/item/mock-listing-1',
+        image: 'https://images.pexels.com/photos/1751731/pexels-photo-1751731.jpeg?auto=compress&cs=tinysrgb&w=400',
+        source: 'facebook',
+        description: `Great ${searchTerm} from Facebook Marketplace`
+      }
+    ];
   }
 }
 
