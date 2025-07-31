@@ -19,6 +19,11 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// In-memory user stats
+const userStats = {
+  totalSearches: 0
+};
+
 // Utility function to log with timestamp
 const logWithTimestamp = (level, message, data = {}) => {
   const timestamp = new Date().toISOString();
@@ -39,6 +44,7 @@ app.get('/', (req, res) => {
     endpoints: {
       'POST /search': 'Search for second-hand items',
       'GET /health': 'Health check',
+      'GET /user-stats': 'User and usage statistics',
       'GET /': 'API information'
     },
     timestamp: new Date().toISOString()
@@ -59,10 +65,19 @@ app.get('/health', (req, res) => {
   });
 });
 
+// User stats endpoint
+app.get('/user-stats', (req, res) => {
+  res.json({
+    uptimeSeconds: Math.floor(process.uptime()),
+    totalSearches: userStats.totalSearches,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Search endpoint
 app.post('/search', async (req, res) => {
   const startTime = Date.now();
-  
+
   try {
     const { search_term, location = 'UK', currency = 'GBP' } = req.body;
 
@@ -79,12 +94,15 @@ app.post('/search', async (req, res) => {
     const cleanSearchTerm = search_term.trim();
     const searchLocation = location?.trim() || '';
     const searchCurrency = currency || 'GBP';
-    
+
     logWithTimestamp('info', `Starting search process`, {
       searchTerm: cleanSearchTerm,
       location: searchLocation,
       currency: searchCurrency
     });
+
+    // Increment total searches
+    userStats.totalSearches++;
 
     // Use the search service to perform the search
     const listings = await searchService.performSearch(cleanSearchTerm, searchLocation, searchCurrency);
@@ -93,7 +111,7 @@ app.post('/search', async (req, res) => {
     const enhancedQuery = searchService.getLastEnhancedQuery();
 
     const processingTime = Date.now() - startTime;
-    
+
     logWithTimestamp('info', 'Search completed successfully', {
       searchTerm: cleanSearchTerm,
       location: searchLocation,
@@ -110,7 +128,7 @@ app.post('/search', async (req, res) => {
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    
+
     console.error('💥 Full search error details:', {
       message: error.message,
       stack: error.stack,
@@ -119,7 +137,7 @@ app.post('/search', async (req, res) => {
       processingTimeMs: processingTime,
       searchTerm: req.body.search_term
     });
-    
+
     logWithTimestamp('error', 'Search request failed', {
       message: error.message,
       stack: error.stack,
@@ -147,13 +165,14 @@ app.use((req, res) => {
     path: req.path,
     ip: req.ip
   });
-  
+
   res.status(404).json({
     error: 'Endpoint not found',
     message: `${req.method} ${req.path} is not a valid endpoint`,
     availableEndpoints: {
       'POST /search': 'Search for second-hand items',
       'GET /health': 'Health check',
+      'GET /user-stats': 'User and usage statistics',
       'GET /': 'API information'
     },
     timestamp: new Date().toISOString()
