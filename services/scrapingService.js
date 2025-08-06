@@ -4,8 +4,8 @@ import { logger } from '../utils/logger.js';
 
 class ScrapingService {
   constructor() {
-    // Use correct ScrapingBee scraping API endpoint here:
-    this.scrapingBeeBaseUrl = 'https://app.scrapingbee.com/api/v1/scrape';
+    // Correct ScrapingBee API endpoint (no /scrape suffix)
+    this.scrapingBeeBaseUrl = 'https://app.scrapingbee.com/api/v1/';
   }
 
   get scrapingBeeApiKey() {
