@@ -4,7 +4,8 @@ import { logger } from '../utils/logger.js';
 
 class ScrapingService {
   constructor() {
-    this.scrapingBeeBaseUrl = 'https://app.scrapingbee.com/api/v1/';
+    // Use correct ScrapingBee scraping API endpoint here:
+    this.scrapingBeeBaseUrl = 'https://app.scrapingbee.com/api/v1/scrape';
   }
 
   get scrapingBeeApiKey() {
@@ -13,7 +14,6 @@ class ScrapingService {
 
   improveEbayImageUrl(url, $item) {
     if (!url && $item) {
-      // Try to get higher-res image from srcset or data-src attributes
       const srcset = $item.find('.s-item__image img').attr('srcset');
       if (srcset) {
         const candidates = srcset.split(',').map(s => s.trim().split(' ')[0]);
@@ -28,7 +28,6 @@ class ScrapingService {
       return url;
     }
 
-    // Replace common low-res suffixes with higher-res suffixes
     const replacements = ['_1280.jpg', '_640.jpg', '_500.jpg'];
     for (const suffix of replacements) {
       const candidate = url.replace(/_(32|64|96|140|180|225)\.jpg$/, suffix);
@@ -42,8 +41,8 @@ class ScrapingService {
     try {
       logger.info(`🛒 Searching eBay for: "${searchTerm}" in ${location}`);
 
-      if (!this.scrapingBeeApiKey || this.scrapingBeeApiKey.trim() === '') {
-        logger.warn('⚠️ ScrapingBee not configured, returning mock data for testing');
+      if (!this.scrapingBeeApiKey) {
+        logger.warn('⚠️ ScrapingBee API key missing, returning mock eBay data');
         return this.getMockEbayResults(searchTerm);
       }
 
@@ -105,8 +104,8 @@ class ScrapingService {
     try {
       logger.info(`🌳 Searching Gumtree for: "${searchTerm}" in ${location}`);
 
-      if (!this.scrapingBeeApiKey || this.scrapingBeeApiKey.trim() === '') {
-        logger.warn('⚠️ ScrapingBee not configured, returning mock data for testing');
+      if (!this.scrapingBeeApiKey) {
+        logger.warn('⚠️ ScrapingBee API key missing, returning mock Gumtree data');
         return this.getMockGumtreeResults(searchTerm);
       }
 
@@ -174,8 +173,8 @@ class ScrapingService {
     try {
       logger.info(`📘 Searching Facebook Marketplace for: "${searchTerm}" in ${location}`);
 
-      if (!this.scrapingBeeApiKey || this.scrapingBeeApiKey.trim() === '') {
-        logger.warn('⚠️ ScrapingBee not configured, returning mock data for testing');
+      if (!this.scrapingBeeApiKey) {
+        logger.warn('⚠️ ScrapingBee API key missing, returning mock Facebook data');
         return this.getMockFacebookResults(searchTerm);
       }
 
@@ -241,8 +240,8 @@ class ScrapingService {
     try {
       logger.info(`💰 Searching CashConverters for: "${searchTerm}" in ${location}`);
 
-      if (!this.scrapingBeeApiKey || this.scrapingBeeApiKey.trim() === '') {
-        logger.warn('⚠️ ScrapingBee not configured, returning mock data for testing');
+      if (!this.scrapingBeeApiKey) {
+        logger.warn('⚠️ ScrapingBee API key missing, returning mock CashConverters data');
         return this.getMockCashConvertersResults(searchTerm);
       }
 
