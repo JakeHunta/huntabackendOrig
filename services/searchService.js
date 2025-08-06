@@ -11,6 +11,7 @@ class SearchService {
     try {
       logger.info(`🔍 Starting comprehensive search for: "${searchTerm}" in ${location} with ${currency}`);
 
+      // Step 1: Enhance search query with OpenAI, fallback on error
       let enhancedQuery;
       try {
         logger.info('🤖 Enhancing search query with OpenAI...');
@@ -25,6 +26,7 @@ class SearchService {
       logger.info('🕷️ Scraping marketplaces...');
       const searchPromises = [];
 
+      // Use original and enhanced search terms, max 5 terms
       const allSearchTerms = [searchTerm, ...(enhancedQuery.search_terms || [])].slice(0, 5);
 
       for (const term of allSearchTerms) {
@@ -34,19 +36,21 @@ class SearchService {
             return [];
           })
         );
+
         searchPromises.push(
           scrapingService.searchGumtree(term, location).catch(err => {
             logger.warn(`⚠️ Gumtree search failed for "${term}":`, err.message);
             return [];
           })
         );
+
         searchPromises.push(
           scrapingService.searchCashConverters(term, location).catch(err => {
             logger.warn(`⚠️ CashConverters search failed for "${term}":`, err.message);
             return [];
           })
         );
-        // Add Facebook Marketplace if desired
+
         searchPromises.push(
           scrapingService.searchFacebookMarketplace(term, location).catch(err => {
             logger.warn(`⚠️ Facebook Marketplace search failed for "${term}":`, err.message);
@@ -55,8 +59,10 @@ class SearchService {
         );
       }
 
+      // Wait for all marketplace searches to finish
       const resultsSettled = await Promise.allSettled(searchPromises);
 
+      // Extract fulfilled results, flatten and filter arrays
       const allResults = resultsSettled
         .filter(r => r.status === 'fulfilled' && Array.isArray(r.value))
         .map(r => r.value)
@@ -67,17 +73,21 @@ class SearchService {
         return [];
       }
 
+      // Deduplicate results based on title+price keys
       const uniqueResults = this.deduplicateResults(allResults);
 
       logger.info(`📊 Found ${uniqueResults.length} unique results from ${allResults.length} total`);
 
+      // Score and rank results
       const scoredResults = this.scoreResults(uniqueResults, searchTerm, enhancedQuery);
 
+      // Sort and limit top 20
       const finalResults = scoredResults
         .filter(r => r && r.title)
         .sort((a, b) => b.score - a.score)
         .slice(0, 20);
 
+      // Convert currency if needed
       const convertedResults = this.convertCurrency(finalResults, currency);
 
       logger.info(`✅ Returning ${convertedResults.length} scored and ranked results`);
@@ -119,7 +129,7 @@ class SearchService {
       const title = (result.title || '').toLowerCase();
       const description = (result.description || '').toLowerCase();
 
-      score += 0.1;
+      score += 0.1; // base score
 
       for (const term of queryTerms) {
         if (title.includes(term)) score += 0.3;
@@ -182,4 +192,3 @@ class SearchService {
 }
 
 export const searchService = new SearchService();
-
