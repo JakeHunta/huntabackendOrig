@@ -1,4 +1,3 @@
-// src/services/openaiService.js
 import OpenAI from 'openai';
 import { logger } from '../utils/logger.js';
 
