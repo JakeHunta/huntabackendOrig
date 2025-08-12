@@ -1,40 +1,44 @@
-import axios from 'axios';
+// src/services/openaiService.js
+import OpenAI from 'openai';
 import { logger } from '../utils/logger.js';
 
-class OpenAIService {
-  constructor() {
-    this.baseURL = 'https://api.openai.com/v1';
+const MODEL = process.env.LLM_MODEL || 'gpt-4o-mini';
+const hasKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
+const client = hasKey ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+
+function stripCodeFences(s = '') {
+  let out = s.trim();
+  // ```json ... ``` or ``` ... ```
+  if (out.startsWith('```')) {
+    out = out.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
   }
+  return out;
+}
 
-  get apiKey() {
-    return process.env.OPENAI_API_KEY;
+function tryParseJsonLoose(text = '') {
+  // 1) direct attempt
+  try { return JSON.parse(text); } catch {}
+  // 2) strip code fences and retry
+  const noFences = stripCodeFences(text);
+  try { return JSON.parse(noFences); } catch {}
+  // 3) extract the first {...} block heuristically
+  const first = noFences.indexOf('{');
+  const last = noFences.lastIndexOf('}');
+  if (first !== -1 && last !== -1 && last > first) {
+    const maybe = noFences.slice(first, last + 1);
+    try { return JSON.parse(maybe); } catch {}
   }
+  return null;
+}
 
-  async enhanceSearchQuery(searchTerm) {
-    if (!this.apiKey || this.apiKey.trim() === '') {
-      logger.info('🔄 Using fallback enhancement (no OpenAI key)');
-      return this.getFallbackEnhancement(searchTerm);
-    }
+const systemPrompt = `You are Hunta, an AI assistant that helps users find second-hand products across marketplaces (eBay, Gumtree, etc.).
+Given a user's search term, return JSON ONLY in this format:
 
-    try {
-      logger.info(`🤖 Enhancing query: "${searchTerm}"`);
-
-      const systemPrompt = `You are Hunta, an AI assistant that helps users find second-hand products across marketplaces like eBay and Gumtree.
-
-Your task is to enhance search queries to improve marketplace search results.
-
-Given a user's search term, provide:
-1. Multiple optimized search terms that sellers typically use
-2. Relevant product categories
-3. Community forums where these items are discussed
-4. Flags for special characteristics
-
-Respond with valid JSON in this exact format:
 {
   "original": "user input here",
-  "search_terms": ["term1", "term2", "term3", "term4"],
-  "categories": ["category1", "category2"],
-  "forums": ["forum1", "forum2"],
+  "search_terms": ["term1","term2","term3","term4"],
+  "categories": ["category1","category2"],
+  "forums": ["forum1","forum2"],
   "flags": {
     "high_value_item": true/false,
     "common_scam_target": true/false,
@@ -43,126 +47,109 @@ Respond with valid JSON in this exact format:
   }
 }
 
-Focus on terms that sellers actually use in listings, including:
-- Brand names and model numbers
-- Common abbreviations
-- Alternative names
-- Condition descriptors (used, pre-owned, second hand)
-- Popular misspellings`;
+Guidelines:
+- Prefer seller language (brand, model, abbreviations, common misspellings).
+- Include condition words where helpful (used, pre-owned).
+- Keep arrays concise and relevant (max ~8 search_terms).`;
 
-      const response = await axios.post(
-        `${this.baseURL}/chat/completions`,
-        {
-          model: 'gpt-4',
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: `Enhance this search query for second-hand marketplace search: "${searchTerm}"`
-            }
-          ],
-          temperature: 0.3,
-          max_tokens: 800
-          // NOTE: Removed invalid timeout here
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 30000  // Axios-level timeout here instead
-        }
-      );
+export const openaiService = {
+  /**
+   * Enhance a search query via OpenAI. Falls back automatically on any error.
+   */
+  async enhanceSearchQuery(searchTerm) {
+    if (!hasKey) {
+      logger.info('🔄 OpenAI key missing — using fallback enhancement');
+      return this.getFallbackEnhancement(searchTerm);
+    }
 
-      const content = response.data.choices[0].message.content.trim();
+    try {
+      logger.info(`🤖 Enhancing query via ${MODEL}: "${searchTerm}"`);
+      const res = await client.chat.completions.create({
+        model: MODEL,
+        temperature: 0.2,
+        max_tokens: 600,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Enhance this search query: "${searchTerm}"` }
+        ]
+      });
 
-      // Clean and parse JSON response
-      let cleanContent = content;
-      if (cleanContent.startsWith('```json')) {
-        cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      } else if (cleanContent.startsWith('```')) {
-        cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
-      }
+      const content = res?.choices?.[0]?.message?.content?.trim();
+      if (!content) throw new Error('Empty completion content');
 
-      const enhancement = JSON.parse(cleanContent);
+      const parsed = tryParseJsonLoose(content);
+      if (!parsed) throw new Error('Failed to parse JSON from completion');
 
-      // Validate the response structure
-      if (!enhancement.search_terms || !Array.isArray(enhancement.search_terms)) {
-        throw new Error('Invalid OpenAI response: missing search_terms array');
-      }
-
-      logger.info(`✅ Query enhanced: ${enhancement.search_terms.length} terms generated`);
-
-      return {
-        original: searchTerm,
-        search_terms: enhancement.search_terms.slice(0, 8), // Limit to 8 terms
-        categories: enhancement.categories || [],
-        forums: enhancement.forums || [],
+      // Normalize/validate
+      const out = {
+        original: parsed.original || String(searchTerm || ''),
+        search_terms: Array.isArray(parsed.search_terms) ? parsed.search_terms.filter(Boolean).slice(0, 8) : [],
+        categories: Array.isArray(parsed.categories) ? parsed.categories.filter(Boolean) : [],
+        forums: Array.isArray(parsed.forums) ? parsed.forums.filter(Boolean) : [],
         flags: {
-          high_value_item: enhancement.flags?.high_value_item || false,
-          common_scam_target: enhancement.flags?.common_scam_target || false,
-          likely_on_forums: enhancement.flags?.likely_on_forums || false,
-          reseller_friendly: enhancement.flags?.reseller_friendly || false
+          high_value_item: !!parsed?.flags?.high_value_item,
+          common_scam_target: !!parsed?.flags?.common_scam_target,
+          likely_on_forums: !!parsed?.flags?.likely_on_forums,
+          reseller_friendly: !!parsed?.flags?.reseller_friendly
         }
       };
 
-    } catch (error) {
-      logger.error('❌ OpenAI enhancement error:', {
-        message: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data
-      });
+      // Ensure at least a couple of terms come back
+      if (!out.search_terms.length) {
+        logger.warn('⚠️ OpenAI returned no search_terms — falling back merge');
+        const fb = this.getFallbackEnhancement(searchTerm);
+        out.search_terms = [...new Set([...(fb.search_terms || []), ...(out.search_terms || [])])].slice(0, 8);
+        if (!out.categories.length) out.categories = fb.categories || [];
+        if (!out.forums.length) out.forums = fb.forums || [];
+        out.flags = { ...fb.flags, ...out.flags };
+      }
 
-      // Return fallback enhancement on error
+      logger.info(`✅ OpenAI enhanced: ${out.search_terms.length} terms`);
+      return out;
+    } catch (err) {
+      logger.error('❌ OpenAI enhancement error', {
+        message: err?.message,
+        name: err?.name,
+        code: err?.code
+      });
       return this.getFallbackEnhancement(searchTerm);
     }
-  }
+  },
 
+  /**
+   * Deterministic fallback expansion without OpenAI.
+   */
   getFallbackEnhancement(searchTerm) {
-    logger.info('🔄 Using intelligent fallback query enhancement');
+    logger.info('🔄 Using fallback query enhancement');
+    const t = String(searchTerm || '').trim();
+    const lower = t.toLowerCase();
 
-    const terms = [
-      searchTerm,
-      `used ${searchTerm}`,
-      `${searchTerm} second hand`,
-      `${searchTerm} pre-owned`,
-      `${searchTerm} secondhand`
+    const base = [
+      t,
+      `used ${t}`,
+      `${t} second hand`,
+      `${t} pre-owned`,
+      `${t} secondhand`,
     ];
 
-    // Add some basic intelligence to fallback
-    const lowerTerm = searchTerm.toLowerCase();
+    // Light domain knowledge
+    if (/(iphone|apple)/i.test(lower)) base.push(`${t} unlocked`, `${t} refurbished`);
+    if (/(guitar|bass|amp|pedal|synth)/i.test(lower)) base.push(`${t} vintage`, `${t} electric`);
+    if (/(car|vehicle)/i.test(lower)) base.push(`${t} low mileage`, `${t} service history`);
 
-    // Add brand-specific terms
-    if (lowerTerm.includes('iphone') || lowerTerm.includes('apple')) {
-      terms.push(`${searchTerm} unlocked`, `${searchTerm} refurbished`);
-    }
-
-    if (lowerTerm.includes('guitar') || lowerTerm.includes('bass')) {
-      terms.push(`${searchTerm} electric`, `${searchTerm} acoustic`);
-    }
-
-    if (lowerTerm.includes('car') || lowerTerm.includes('vehicle')) {
-      terms.push(`${searchTerm} auto`, `${searchTerm} motor`);
-    }
+    const unique = [...new Set(base)].filter(Boolean).slice(0, 6);
 
     return {
-      original: searchTerm,
-      search_terms: terms.slice(0, 6),
+      original: t,
+      search_terms: unique,
       categories: ['general'],
       forums: ['reddit'],
       flags: {
-        high_value_item: lowerTerm.includes('iphone') || lowerTerm.includes('macbook') || lowerTerm.includes('rolex'),
-        common_scam_target: lowerTerm.includes('iphone') || lowerTerm.includes('designer') || lowerTerm.includes('luxury'),
-        likely_on_forums: lowerTerm.includes('guitar') || lowerTerm.includes('vintage') || lowerTerm.includes('collectible'),
+        high_value_item: /(iphone|macbook|rolex|gpu|ps5)/i.test(lower),
+        common_scam_target: /(iphone|designer|luxury|gpu)/i.test(lower),
+        likely_on_forums: /(guitar|vintage|collectible|pokemon|tcg)/i.test(lower),
         reseller_friendly: true
       }
     };
   }
-}
-
-export const openaiService = new OpenAIService();
-
+};
