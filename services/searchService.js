@@ -1,4 +1,3 @@
-// src/services/searchService.js (ESM)
 import { openaiService } from './openaiService.js';
 import { scrapingService } from './scrapingService.js';
 import { logger } from '../utils/logger.js';
